@@ -1,0 +1,27 @@
+{
+  "name": "eth2-batch-contract",
+  "version": "1.0.0",
+  "description": "eth staking batch deposit contract with fees",
+  "dependencies": {
+    "openzeppelin-solidity": "^3.3.0",
+    "truffle": "^5.1.55"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "build": "truffle compile"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MyEtherWallet/eth2-batch-contract.git"
+  },
+  "keywords": [
+    "eth2",
+    "staking"
+  ],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/MyEtherWallet/eth2-batch-contract/issues"
+  },
+  "homepage": "https://github.com/MyEtherWallet/eth2-batch-contract#readme"
+}

@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.5.11;
+pragma solidity 0.6.2;
 
 /// @notice  Interface of the official Deposit contract from the ETH
 ///          Foundation.
 interface IDeposit {
-
     /// @notice Submit a Phase 0 DepositData object.
     ///
     /// @param pubkey - A BLS12-381 public key.
@@ -19,5 +18,4 @@ interface IDeposit {
         bytes calldata signature,
         bytes32 deposit_data_root
     ) external payable;
-
 }

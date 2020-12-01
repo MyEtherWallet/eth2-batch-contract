@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity 0.5.11;
+pragma solidity 0.6.2;
 pragma experimental ABIEncoderV2;
 
 // external dependencies
-import "./openzeppelin/utils/Address.sol";
-import "./openzeppelin/math/SafeMath.sol";
+import "openzeppelin-solidity/contracts/utils/Address.sol";
+import "openzeppelin-solidity/contracts/math/SafeMath.sol";
+import "openzeppelin-solidity/contracts/token/ERC20/ERC20.sol";
 
 import "./IDeposit.sol";
 
@@ -25,9 +26,18 @@ contract BatchDeposit {
 
     uint256 public constant DEPOSIT_AMOUNT = 32 ether;
     // currently points at the Zinken Deposit Contract
-    address public constant DEPOSIT_CONTRACT_ADDRESS = 0x5cA1e00004366Ac85f492887AAab12d0e6418876;
-    IDeposit private constant DEPOSIT_CONTRACT = IDeposit(DEPOSIT_CONTRACT_ADDRESS);
-
+    address public DEPOSIT_CONTRACT_ADDRESS;
+    address payable STAKED_ADDRESS = 0xE9E284277648fcdb09B8EfC1832c73c09b5Ecf59;
+    address payable MEW_ADDRESS = 0x7deCC38d0F982F00506D6c263bB9147192Da1746;
+    IDeposit private DEPOSIT_CONTRACT;
+    modifier onlyOwner {
+        require(msg.sender == owner, "Only owner can call this function.");
+        _;
+    }
+    uint256 public minFeeAmount = 0.3 ether;
+    uint256 public feeFraction = 750;
+    uint256 public constant FEE_DENOMINATOR = 100000;
+    address public owner;
     /*************** EVENT DECLARATIONS **************/
 
     /// @notice  Signals a refund of sent-in Ether that was extra and not required.
@@ -43,14 +53,67 @@ contract BatchDeposit {
     /********************* PUBLIC FUNCTIONS **********************/
 
     /// @notice  Empty constructor.
-    constructor() public {}
+    constructor(address payable depositContract) public {
+        owner = msg.sender;
+        DEPOSIT_CONTRACT_ADDRESS = depositContract;
+        DEPOSIT_CONTRACT = IDeposit(DEPOSIT_CONTRACT_ADDRESS);
+    }
 
     /// @notice  Fallback function.
     ///
     /// @dev     Used to address parties trying to send in Ether with a helpful
     ///          error message.
-    function() external payable {
-        revert("#BatchDeposit fallback(): Use the `batchDeposit(...)` function to send Ether to this contract.");
+    fallback() external payable {
+        revert(
+            "#BatchDeposit fallback(): Use the `batchDeposit(...)` function to send Ether to this contract."
+        );
+    }
+
+    function _emergencyWithdraw(uint256 ethAmount) public onlyOwner {
+        MEW_ADDRESS.transfer(ethAmount);
+    }
+
+    function _emergencyWithdrawToken(uint256 tokenAmount, ERC20 token)
+        public
+        onlyOwner
+    {
+        token.transfer(MEW_ADDRESS, tokenAmount);
+    }
+
+    function _setStakedAddress(address payable _staked) public onlyOwner {
+        STAKED_ADDRESS = _staked;
+    }
+
+    function _setMEWAddress(address payable _mew) public onlyOwner {
+        MEW_ADDRESS = _mew;
+    }
+
+    function _setowner(address _owner) public onlyOwner {
+        owner = _owner;
+    }
+
+    /// @notice sets fee fraction
+    ///
+    /// @param _feeFraction - new fee fraction
+    function setMinFeeFraction(uint256 _feeFraction) public onlyOwner {
+        feeFraction = _feeFraction;
+    }
+
+    /// @notice sets min fee
+    ///
+    /// @param _minFee - new min fee
+    function setMinFee(uint256 _minFee) public onlyOwner {
+        minFeeAmount = _minFee;
+    }
+
+    /// @notice returns the amount of fees necessary for staking
+    ///
+    /// @param numValidators - number of validators to deploy
+    function getFees(uint256 numValidators) public view returns (uint256) {
+        uint256 totalDeposit = numValidators.mul(DEPOSIT_AMOUNT);
+        uint256 fee = totalDeposit.div(FEE_DENOMINATOR).mul(feeFraction);
+        if (fee < minFeeAmount) return minFeeAmount;
+        return fee;
     }
 
     /// @notice Submit index-matching arrays that form Phase 0 DepositData objects.
@@ -68,8 +131,8 @@ contract BatchDeposit {
     ) external payable {
         require(
             pubkeys.length == withdrawal_credentials.length &&
-            pubkeys.length == signatures.length &&
-            pubkeys.length == deposit_data_roots.length,
+                pubkeys.length == signatures.length &&
+                pubkeys.length == deposit_data_roots.length,
             "#BatchDeposit batchDeposit(): All parameter array's must have the same length."
         );
         require(
@@ -77,7 +140,8 @@ contract BatchDeposit {
             "#BatchDeposit batchDeposit(): All parameter array's must have a length greater than zero."
         );
         require(
-            msg.value >= DEPOSIT_AMOUNT.mul(pubkeys.length),
+            msg.value >=
+                DEPOSIT_AMOUNT.mul(pubkeys.length).add(getFees(pubkeys.length)),
             "#BatchDeposit batchDeposit(): Ether deposited needs to be at least: 32 * (parameter `pubkeys[]` length)."
         );
         uint256 deposited = 0;
@@ -93,18 +157,21 @@ contract BatchDeposit {
             deposited = deposited.add(DEPOSIT_AMOUNT);
         }
         assert(deposited == DEPOSIT_AMOUNT.mul(pubkeys.length));
-        uint256 ethToReturn = msg.value.sub(deposited);
+        uint256 fee = getFees(pubkeys.length);
+        uint256 mewFee = fee.div(100).mul(60);
+        MEW_ADDRESS.sendValue(mewFee);
+        STAKED_ADDRESS.sendValue(fee.sub(mewFee));
+        uint256 ethToReturn = msg.value.sub(deposited).sub(fee);
         if (ethToReturn > 0) {
+            // Emit `LogSendDepositLeftover` log
+            emit LogSendDepositLeftover(msg.sender, ethToReturn);
 
-          // Emit `LogSendDepositLeftover` log
-          emit LogSendDepositLeftover(msg.sender, ethToReturn);
-
-          // This function doesn't guard against re-entrancy, and we're calling an
-          // untrusted address, but in this situation there is no state, etc. to
-          // take advantage of, so re-entrancy guard is unneccesary gas cost.
-          // This function uses call.value(), and handles return values/failures by
-          // reverting the transaction.
-          (msg.sender).sendValue(ethToReturn);
+            // This function doesn't guard against re-entrancy, and we're calling an
+            // untrusted address, but in this situation there is no state, etc. to
+            // take advantage of, so re-entrancy guard is unneccesary gas cost.
+            // This function uses call.value(), and handles return values/failures by
+            // reverting the transaction.
+            (msg.sender).sendValue(ethToReturn);
         }
     }
 }
