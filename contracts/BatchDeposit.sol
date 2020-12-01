@@ -139,10 +139,11 @@ contract BatchDeposit {
             pubkeys.length > 0,
             "#BatchDeposit batchDeposit(): All parameter array's must have a length greater than zero."
         );
+        uint256 requiredDeposit = DEPOSIT_AMOUNT.mul(pubkeys.length);
+        uint256 requiredFees = getFees(pubkeys.length);
         require(
-            msg.value >=
-                DEPOSIT_AMOUNT.mul(pubkeys.length).add(getFees(pubkeys.length)),
-            "#BatchDeposit batchDeposit(): Ether deposited needs to be at least: 32 * (parameter `pubkeys[]` length)."
+            msg.value >= requiredDeposit.add(requiredFees),
+            "#BatchDeposit batchDeposit(): Ether deposited needs to be at least: 32 * (parameter `pubkeys[]` length) + Fees."
         );
         uint256 deposited = 0;
 
@@ -156,12 +157,11 @@ contract BatchDeposit {
             );
             deposited = deposited.add(DEPOSIT_AMOUNT);
         }
-        assert(deposited == DEPOSIT_AMOUNT.mul(pubkeys.length));
-        uint256 fee = getFees(pubkeys.length);
-        uint256 mewFee = fee.div(100).mul(60);
+        assert(deposited == requiredDeposit);
+        uint256 mewFee = requiredFees.div(100).mul(60);
         MEW_ADDRESS.sendValue(mewFee);
-        STAKED_ADDRESS.sendValue(fee.sub(mewFee));
-        uint256 ethToReturn = msg.value.sub(deposited).sub(fee);
+        STAKED_ADDRESS.sendValue(requiredFees.sub(mewFee));
+        uint256 ethToReturn = msg.value.sub(deposited).sub(requiredFees);
         if (ethToReturn > 0) {
             // Emit `LogSendDepositLeftover` log
             emit LogSendDepositLeftover(msg.sender, ethToReturn);

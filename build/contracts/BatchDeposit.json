@@ -10526,7 +10526,7 @@
   },
   "networks": {},
   "schemaVersion": "3.3.2",
-  "updatedAt": "2020-12-01T18:01:03.933Z",
+  "updatedAt": "2020-12-01T19:35:06.391Z",
   "devdoc": {
     "details": "The batch size has an upper bound due to the block gas limit. Each atomic          deposit costs ~62,000 gas. The current block gas-limit is ~12,400,000 gas.  /// Author:  Staked Securely, Inc. (https://staked.us/)",
     "methods": {
